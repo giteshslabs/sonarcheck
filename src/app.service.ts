@@ -1,24 +1,49 @@
-import { Injectable } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
-import { JwtPayload } from 'jsonwebtoken';
-import * as url from 'url';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import * as admin from 'firebase-admin';
+import { applicationConfig } from './config/application.config';
+import { ConfigType } from '@nestjs/config';
 
 @Injectable()
 export class AppService {
-  constructor(private jwtService: JwtService) {}
-  getHello(): any {
-    // The signature '(urlString: string): UrlWithStringQuery' of 'url.parse' is deprecated.
-    const originalUrl =
-      'https://chatgpt.com/c/10fc6a78-75de-45a0-8bf1-5648220889db';
-    const parsedUrl = url.parse(originalUrl).pathname;
-    console.log(`parsedUrl`, parsedUrl);
+  private DHPApp: admin.app.App;
 
-    // This assertion is unnecessary since it does not change the type of the expression.
-    const jwtToken =
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
-    const decodedData = this.jwtService.decode(jwtToken, {
-      complete: true,
-    }) as JwtPayload;
-    console.log(`decodedData`, decodedData);
+  private DHPFirestore: admin.firestore.Firestore;
+  constructor(
+    @Inject(applicationConfig.KEY)
+    private readonly appConfig: ConfigType<typeof applicationConfig>,
+  ) {
+    this.DHPApp = admin.initializeApp(
+      {
+        credential: admin.credential.cert({
+          projectId: this.appConfig.dhp.projectId,
+          clientEmail: this.appConfig.dhp.clientEmail,
+          privateKey: this.appConfig.dhp.privateKey?.replace(/\\n/g, '\n'),
+        }),
+      },
+      'DHPApp',
+    );
+
+    this.DHPFirestore = this.DHPApp.firestore();
+  }
+
+  private collectionName = 'app_config';
+
+  private documentName = 'maintenance_mode';
+  async getHello(): Promise<any> {
+    try {
+      const docRef = this.DHPFirestore.collection(this.collectionName).doc(
+        this.documentName,
+      );
+      const doc = await docRef.get();
+      if (doc.exists) {
+        return doc.data();
+      } else {
+        throw new Error(
+          `Document ${this.documentName} does not exist in collection ${this.collectionName}`,
+        );
+      }
+    } catch (error) {
+      throw new BadRequestException(error);
+    }
   }
 }
